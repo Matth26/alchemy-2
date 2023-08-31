@@ -1,71 +1,115 @@
+import { EntityIndex, setComponent } from '@latticexyz/recs';
+import { useEffect, useState } from 'react';
 import './App.css';
 import { useDojo } from './DojoContext';
-import { useComponentValue } from "@dojoengine/react";
-import { Direction, } from './dojo/createSystemCalls'
-import { EntityIndex, setComponent } from '@latticexyz/recs';
-import { useEffect } from 'react';
-import { getFirstComponentByType } from './utils';
-import { Moves, Position } from './generated/graphql';
+import { ElementList } from './ui/ElementList';
+import { isValidArray } from './utils';
+import { useElementStore } from './utils/store';
 
 function App() {
   const {
     setup: {
-      systemCalls: { spawn, move },
-      components: { Moves, Position },
-      network: { graphSdk, call }
+      systemCalls: { init_user, merge_elements },
+      components: { Elements },
+      network: { graphSdk, call },
     },
-    account: { create, list, select, account, isDeploying }
+    account: { create, list, select, account, isDeploying },
   } = useDojo();
+
+  const [firstElement, setFirstElement] = useState(0);
+  const [secondElement, setSecondElement] = useState(0);
+
+  const { element_ids, add_element } = useElementStore((state) => state);
 
   // entity id - this example uses the account address as the entity id
   const entityId = account.address;
 
-  // get current component values
-  const position = useComponentValue(Position, parseInt(entityId.toString()) as EntityIndex);
-  const moves = useComponentValue(Moves, parseInt(entityId.toString()) as EntityIndex);
-
   useEffect(() => {
-
     if (!entityId) return;
 
     const fetchData = async () => {
       const { data } = await graphSdk.getEntities();
+      console.log('entities', data);
 
       if (data) {
-        let remaining = getFirstComponentByType(data.entities?.edges, 'Moves') as Moves;
-        let position = getFirstComponentByType(data.entities?.edges, 'Position') as Position;
+        console.log('data', data);
+        const entities = data.entities?.edges;
 
-        setComponent(Moves, parseInt(entityId.toString()) as EntityIndex, { remaining: remaining.remaining })
-        setComponent(Position, parseInt(entityId.toString()) as EntityIndex, { x: position.x, y: position.y })
+        if (entities) {
+          for (const entity of entities) {
+            if (
+              entity &&
+              entity.node &&
+              isValidArray(entity?.node.components)
+            ) {
+              const foundComponent = entity.node.components.find(
+                (comp: any) => comp.__typename === 'Elements'
+              );
+              if (foundComponent) {
+                console.log('setComponent', foundComponent.element);
+                setComponent(
+                  Elements,
+                  parseInt(entityId.toString()) as EntityIndex,
+                  {
+                    element: foundComponent.element,
+                  }
+                );
+              }
+            }
+          }
+        }
       }
-    }
+    };
+
     fetchData();
   }, [account.address]);
 
-
   return (
     <>
-      <button onClick={create}>{isDeploying ? "deploying burner" : "create burner"}</button>
+      <button onClick={create}>
+        {isDeploying ? 'deploying burner' : 'create burner'}
+      </button>
       <div className="card">
-        select signer:{" "}
-        <select onChange={e => select(e.target.value)}>
+        select signer:{' '}
+        <select onChange={(e) => select(e.target.value)}>
           {list().map((account, index) => {
-            return <option value={account.address} key={index}>{account.address}</option>
+            return (
+              <option value={account.address} key={index}>
+                {account.address}
+              </option>
+            );
           })}
         </select>
       </div>
-      <div className="card">
-        <button onClick={() => spawn(account)}>Spawn</button>
-        <div>Moves Left: {moves ? `${moves['remaining']}` : 'Need to Spawn'}</div>
-        <div>Position: {position ? `${position['x']}, ${position['y']}` : 'Need to Spawn'}</div>
-      </div>
-      <div className="card">
-        <button onClick={() => move(account, Direction.Up)}>Move Up</button> <br />
-        <button onClick={() => move(account, Direction.Left)}>Move Left</button>
-        <button onClick={() => move(account, Direction.Right)}>Move Right</button> <br />
-        <button onClick={() => move(account, Direction.Down)}>Move Down</button>
-      </div>
 
+      <div className="card">
+        <button onClick={() => init_user(account, add_element)}>
+          Init Player
+        </button>
+      </div>
+      <ElementList />
+
+      <div className="card">
+        <input
+          type="number"
+          value={firstElement}
+          onChange={(e) => setFirstElement(parseInt(e.target.value, 10))}
+          placeholder="First Element"
+        />
+        <input
+          type="number"
+          value={secondElement}
+          onChange={(e) => setSecondElement(parseInt(e.target.value, 10))}
+          placeholder="Second Element"
+        />
+        <button
+          onClick={() =>
+            merge_elements(account, firstElement, secondElement, add_element)
+          }
+        >
+          Merge
+        </button>
+      </div>
     </>
   );
 }
